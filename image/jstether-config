@@ -1,0 +1,131 @@
+#!/bin/bash
+# JohorStudio Tether: apply settings from jstether.txt on the boot partition.
+# Runs early on every boot; does nothing if the file has not changed.
+set -u
+
+CFG=""
+for f in /boot/firmware/jstether.txt /boot/jstether.txt; do
+    [ -f "$f" ] && CFG="$f" && break
+done
+[ -z "$CFG" ] && exit 0
+
+ROOT="${JSTETHER_ROOT:-}"          # for testing: apply into a fake root
+STAMP="$ROOT/var/lib/jstether-config.sha256"
+NM_DIR="$ROOT/etc/NetworkManager/system-connections"
+
+sum=$(sha256sum "$CFG" | cut -d' ' -f1)
+if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$sum" ]; then
+    exit 0
+fi
+echo "jstether-config: applying $CFG"
+
+get() {  # value of KEY=..., last one wins; strips CR and optional quotes
+    local v
+    v=$(grep -E "^[[:space:]]*$1[[:space:]]*=" "$CFG" | tail -1 | cut -d= -f2- | tr -d '\r')
+    v="${v#"${v%%[![:space:]]*}"}"
+    v="${v%"${v##*[![:space:]]}"}"
+    if [[ ${#v} -ge 2 && ( ( ${v:0:1} == '"' && ${v: -1} == '"' ) || ( ${v:0:1} == "'" && ${v: -1} == "'" ) ) ]]; then
+        v="${v:1:${#v}-2}"
+    fi
+    printf '%s' "$v"
+}
+
+keyfile_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g'; }
+
+write_wifi() {  # name ssid pass priority
+    local name=$1 ssid=$2 pass=$3 prio=$4 file="$NM_DIR/$1.nmconnection"
+    rm -f "$file"
+    [ -z "$ssid" ] && return
+    mkdir -p "$NM_DIR"
+    {
+        echo "[connection]"
+        echo "id=$name"
+        echo "uuid=$(cat /proc/sys/kernel/random/uuid)"
+        echo "type=wifi"
+        echo "autoconnect=true"
+        echo "autoconnect-priority=$prio"
+        echo
+        echo "[wifi]"
+        echo "mode=infrastructure"
+        echo "ssid=$(keyfile_escape "$ssid")"
+        if [ -n "$pass" ]; then
+            echo
+            echo "[wifi-security]"
+            echo "key-mgmt=wpa-psk"
+            echo "psk=$(keyfile_escape "$pass")"
+        fi
+        echo
+        echo "[ipv4]"
+        echo "method=auto"
+        echo
+        echo "[ipv6]"
+        echo "method=auto"
+    } > "$file"
+    chmod 600 "$file"
+    echo "  wifi $name -> $ssid"
+}
+
+# --- WiFi ------------------------------------------------------------------
+write_wifi jstether-wifi1 "$(get WIFI_SSID)" "$(get WIFI_PASSWORD)" 20
+write_wifi jstether-wifi2 "$(get WIFI2_SSID)" "$(get WIFI2_PASSWORD)" 10
+
+COUNTRY=$(get WIFI_COUNTRY | tr '[:lower:]' '[:upper:]')
+COUNTRY=${COUNTRY:-MY}
+CMDLINE=$(dirname "$CFG")/cmdline.txt
+if [ -f "$CMDLINE" ]; then
+    line=$(head -1 "$CMDLINE" | sed -E 's/ ?cfg80211\.ieee80211_regdom=[^ ]*//g')
+    echo "$line cfg80211.ieee80211_regdom=$COUNTRY" > "$CMDLINE"
+fi
+# Pi OS keeps WiFi soft-blocked until a country is set
+for f in "$ROOT"/var/lib/systemd/rfkill/*wlan; do
+    [ -f "$f" ] && echo 0 > "$f"
+done
+[ -z "$ROOT" ] && rfkill unblock wifi 2>/dev/null || true
+
+# --- hostname ----------------------------------------------------------------
+HOST=$(get HOSTNAME | tr -cd 'A-Za-z0-9-')
+if [ -n "$HOST" ]; then
+    echo "$HOST" > "$ROOT/etc/hostname"
+    if grep -q '^127\.0\.1\.1' "$ROOT/etc/hosts" 2>/dev/null; then
+        sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$HOST/" "$ROOT/etc/hosts"
+    else
+        printf '127.0.1.1\t%s\n' "$HOST" >> "$ROOT/etc/hosts"
+    fi
+    [ -z "$ROOT" ] && hostname "$HOST" 2>/dev/null || true
+    echo "  hostname -> $HOST"
+fi
+
+# --- user ----------------------------------------------------------------
+USER_NAME=$(get PI_USER | tr -cd 'a-z0-9_-')
+USER_NAME=${USER_NAME:-jstether}
+PASS=$(get PI_PASSWORD)
+if [ -z "$ROOT" ]; then
+    if ! id "$USER_NAME" >/dev/null 2>&1; then
+        groups=""
+        for g in sudo adm plugdev i2c gpio video netdev dialout users; do
+            getent group "$g" >/dev/null && groups="$groups,$g"
+        done
+        useradd -m -s /bin/bash -G "${groups#,}" "$USER_NAME"
+        echo "  user $USER_NAME created"
+    fi
+    if [ -n "$PASS" ]; then
+        echo "$USER_NAME:$PASS" | chpasswd && echo "  password set for $USER_NAME"
+    fi
+fi
+# don't leave the login password lying on the SD card
+sed -i -E 's/^([[:space:]]*PI_PASSWORD[[:space:]]*=).*/\1/' "$CFG"
+
+# --- fixed Mac address (optional) ---------------------------------------------
+MACIP=$(get MAC_IP | tr -cd '0-9A-Za-z.:-')
+if [ -n "$MACIP" ]; then
+    [[ "$MACIP" == *:* ]] || MACIP="$MACIP:47800"
+    echo "JSTETHER_MAC=$MACIP" > "$ROOT/etc/jstether.env"
+    echo "  fixed Mac -> $MACIP"
+else
+    : > "$ROOT/etc/jstether.env"
+fi
+
+sync
+mkdir -p "$(dirname "$STAMP")"
+sha256sum "$CFG" | cut -d' ' -f1 > "$STAMP"
+echo "jstether-config: done"

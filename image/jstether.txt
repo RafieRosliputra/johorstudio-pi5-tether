@@ -1,0 +1,27 @@
+# ==============================================================
+#  JohorStudio Tether - tetapan Raspberry Pi
+#  Edit fail ini di Mac (cakera "bootfs" selepas flash SD).
+#  Simpan, eject SD, masukkan ke Pi, hidupkan.
+#  Boleh edit lagi bila-bila masa - Pi guna tetapan baru bila boot.
+# ==============================================================
+
+# WiFi utama (router event)
+WIFI_SSID=
+WIFI_PASSWORD=
+
+# WiFi kedua - pilihan (contoh hotspot telefon sebagai backup)
+WIFI2_SSID=
+WIFI2_PASSWORD=
+
+WIFI_COUNTRY=MY
+
+# Login Pi untuk SSH:  ssh jstether@jstether.local
+# Kata laluan dikosongkan dari fail ini sendiri selepas dipakai.
+# Isi semula hanya bila nak tukar.
+PI_USER=jstether
+PI_PASSWORD=johorstudio
+HOSTNAME=jstether
+
+# Pilihan: IP Mac tetap kalau auto-cari tak jalan (contoh 192.168.1.50)
+# Kosongkan untuk auto-cari Mac.
+MAC_IP=

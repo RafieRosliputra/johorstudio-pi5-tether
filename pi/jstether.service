@@ -1,0 +1,19 @@
+[Unit]
+Description=JohorStudio Tether (A7R II -> Pi -> Mac)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/jstether/jstether.py
+StateDirectory=jstether
+WorkingDirectory=/var/lib/jstether
+Environment=JSTETHER_DIR=/var/lib/jstether
+Environment=JSTETHER_KEEP=30
+# Fixed Mac address (written from MAC_IP in jstether.txt), optional:
+EnvironmentFile=-/etc/jstether.env
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

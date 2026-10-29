@@ -1,0 +1,15 @@
+[Unit]
+Description=JohorStudio Tether - apply jstether.txt (WiFi, user, hostname)
+DefaultDependencies=no
+After=local-fs.target systemd-remount-fs.service
+Before=systemd-rfkill.service NetworkManager.service network-pre.target ssh.service jstether.service sysinit.target
+Wants=network-pre.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/jstether-config
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

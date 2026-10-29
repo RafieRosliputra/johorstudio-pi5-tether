@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+mac/.build/
+mac/build/
+*.img
+*.img.xz
