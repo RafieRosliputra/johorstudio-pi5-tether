@@ -4,6 +4,11 @@ on:
   workflow_dispatch:
   push:
     tags: ["v*"]
+    branches: [main]
+    paths:
+      - "pi/**"
+      - "image/**"
+      - ".github/workflows/build-image.yml"
 
 permissions:
   contents: write
